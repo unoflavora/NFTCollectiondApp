@@ -1,69 +1,300 @@
 import Head from 'next/head'
-import Image from 'next/image'
+import { Contract, providers, utils } from 'ethers'
+import { useEffect, useState, useRef } from 'react'
+import { abi, NFT_CONTRACT_ADDRESS } from '../constants'
 import styles from '../styles/Home.module.css'
+import Web3Modal from 'web3modal'
 
 export default function Home() {
+  const [walletConnected, setWalletConnected] = useState(false);
+  const [presaleStarted, setPresaleStarted] = useState(false);
+  const [presaleEnded, setPresaleEnded] = useState(false);
+  const [loading, setLoading] = useState(false);
+  const [isOwner, setIsOwner] = useState(false);
+  const [tokenIdsMinted, setTokenIdsMinted] = useState("0");
+  const web3ModalRef = useRef();
+
+  useEffect(() => {
+    if (!walletConnected) {
+      web3ModalRef.current = new Web3Modal({
+        network: "Rinkeby",
+        providerOptions: {},
+        disableInjectedProvider: false
+      })
+
+      connectWallet()
+
+      const _presaleStarted = checkIfPresaleStarted();
+      if (_presaleStarted) {
+        checkIfPresaleEnded();
+      }
+
+      getTokenIdsMinted();
+
+      const presaleEndedInterval = setInterval(async function () {
+        const _presaleStarted = await checkIfPresaleStarted();
+        if (_presaleStarted) {
+          const _presaleEnded = await checkIfPresaleEnded();
+          if (_presaleEnded) {
+            clearInterval(presaleEndedInterval);
+          }
+        }
+      }, 5 * 1000);
+
+      setInterval(async function () {
+        await getTokenIdsMinted();
+      }, 5 * 1000);
+    }
+  }, [walletConnected])
+
+  async function getProviderOrSigner(needSigner = false) {
+    const provider = await web3ModalRef.current.connect()
+    const web3Provider = new providers.Web3Provider(provider)
+    const { chainId } = await web3Provider.getNetwork()
+    if (chainId !== 4) {
+      window.alert('Please change the network to Rinkeby!')
+      throw new Error("Network is not rinkeby")
+    }
+
+    if (needSigner) {
+      const signer = web3Provider.getSigner()
+      return signer
+    } else {
+      return web3Provider
+    }
+  }
+
+  /**
+ * connectWallet: Connect to wallet
+ */
+  async function connectWallet() {
+    try {
+      await getProviderOrSigner();
+      setWalletConnected(true);
+    } catch (err) {
+      console.error(err);
+    }
+  }
+
+  /**
+   * presaleMint: Mint NFT saat presale
+   */
+  async function presaleMint() {
+    const signer = await getProviderOrSigner(true)
+    const agateNFTContract = new Contract(
+      NFT_CONTRACT_ADDRESS, abi, signer
+    )
+
+    try {
+      const tx = await agateNFTContract.presaleMint({
+        value: utils.parseEther("0.01")
+      })
+
+      setLoading(true)
+      await tx.wait()
+      setLoading(false)
+      window.alert("You successfully minted a Agate NFT Dev!")
+    } catch (error) {
+      window.alert(error.message)
+
+      console.error(error)
+    }
+  }
+
+  /**
+   * publicSaleMint: Mint NFT setelah presale
+   */
+  async function publicSaleMint() {
+    const signer = await getProviderOrSigner(true)
+    const agateNFTContract = new Contract(
+      NFT_CONTRACT_ADDRESS, abi, signer
+    )
+
+    try {
+      const tx = await agateNFTContract.mint({
+        value: utils.parseEther("0.01")
+      })
+      setLoading(true)
+      await tx.wait()
+      setLoading(false)
+      window.alert("You successfully minted a Agate NFT Dev!")
+    } catch (error) {
+      console.error(error)
+    }
+  }
+
+  /**
+   * startPresale: mulai presale
+   */
+  async function startPresale() {
+    const signer = await getProviderOrSigner(true)
+    const agateNFTContract = new Contract(NFT_CONTRACT_ADDRESS, abi, signer)
+
+    try {
+      const tx = await agateNFTContract.startPresale()
+      setLoading(true)
+      await tx.wait()
+      setLoading(false)
+      window.alert("You successfully minted a Agate NFT Dev!")
+    } catch (error) {
+      console.error(error)
+    }
+  }
+
+  /**
+   * checkIfPresaleStarted: cek presale
+   */
+  async function checkIfPresaleStarted() {
+    const provider = await getProviderOrSigner()
+    const agateNFTContract = new Contract(NFT_CONTRACT_ADDRESS, abi, provider)
+
+    try {
+      const _presaleStarted = await agateNFTContract.presaleStarted()
+      if (!_presaleStarted) {
+        await getOwner()
+      }
+      setPresaleStarted(_presaleStarted)
+      return _presaleStarted
+    } catch (e) {
+      console.error(e)
+    }
+  }
+
+  /**
+   * checkIfPresaleEnded: checks if the presale has ended by quering the `presaleEnded`
+   * variable in the contract
+   */
+  async function checkIfPresaleEnded() {
+    const provider = await getProviderOrSigner();
+    const nftContract = new Contract(NFT_CONTRACT_ADDRESS, abi, provider);
+    const _presaleEnded = await nftContract.presaleEnded();
+
+    try {
+      //_presaleEnded adalah Big Number, jadi kita menggunaka It '<'
+      const hasEnded = _presaleEnded.lt(Math.floor(Date.now() / 1000));
+      if (hasEnded) {
+        setPresaleEnded(true);
+      } else {
+        setPresaleEnded(false);
+      }
+      return hasEnded;
+
+    } catch (e) {
+      console.error(e)
+    }
+  }
+
+  async function getOwner() {
+    // Butuh signer karena butuh address user.
+    const signer = await getProviderOrSigner(true);
+    const nftContract = new Contract(NFT_CONTRACT_ADDRESS, abi, signer);
+    try {
+      const _owner = await nftContract.owner();
+      const address = await signer.getAddress();
+      if (address.toLowerCase() === _owner.toLowerCase()) {
+        setIsOwner(true)
+      }
+    } catch (e) {
+      console.error(e)
+    }
+  }
+
+  async function getTokenIdsMinted() {
+    const signer = await getProviderOrSigner();
+    const nftContract = new Contract(NFT_CONTRACT_ADDRESS, abi, signer);
+    try {
+      const _tokenIds = await nftContract.tokenIds();
+      setTokenIdsMinted(_tokenIds.toString());
+    } catch (e) {
+      console.error(e)
+    }
+  }
+
+  const renderButton = () => {
+    // If wallet is not connected, return a button which allows them to connect their wllet
+    if (!walletConnected) {
+      return (
+        <button onClick={connectWallet} className={styles.button}>
+          Connect your wallet
+        </button>
+      );
+    }
+
+    // If we are currently waiting for something, return a loading button
+    if (loading) {
+      return <button className={styles.button}>Loading...</button>;
+    }
+
+    // If connected user is the owner, and presale hasnt started yet, allow them to start the presale
+    if (isOwner && !presaleStarted) {
+      return (
+        <button className={styles.button} onClick={startPresale}>
+          Start Presale!
+        </button>
+      );
+    }
+
+    // If connected user is not the owner but presale hasn't started yet, tell them that
+    if (!presaleStarted) {
+      return (
+        <div>
+          <div className={styles.description}>Presale hasnt started!</div>
+        </div>
+      );
+    }
+
+    // If presale started, but hasn't ended yet, allow for minting during the presale period
+    if (presaleStarted && !presaleEnded) {
+      return (
+        <div>
+          <div className={styles.description}>
+            Presale has started!!! If your address is whitelisted, Mint a
+            Agate NFT Dev 🥳
+          </div>
+          <button className={styles.button} onClick={presaleMint}>
+            Presale Mint 🚀
+          </button>
+        </div>
+      );
+    }
+
+    // If presale started and has ended, its time for public minting
+    if (presaleStarted && presaleEnded) {
+      return (
+        <button className={styles.button} onClick={publicSaleMint}>
+          Public Mint 🚀
+        </button>
+      );
+    }
+  };
+
   return (
-    <div className={styles.container}>
+    <div>
       <Head>
-        <title>Create Next App</title>
-        <meta name="description" content="Generated by create next app" />
+        <title>Agate NFT Devs</title>
+        <meta name="description" content="Whitelist-Dapp" />
         <link rel="icon" href="/favicon.ico" />
       </Head>
-
-      <main className={styles.main}>
-        <h1 className={styles.title}>
-          Welcome to <a href="https://nextjs.org">Next.js!</a>
-        </h1>
-
-        <p className={styles.description}>
-          Get started by editing{' '}
-          <code className={styles.code}>pages/index.js</code>
-        </p>
-
-        <div className={styles.grid}>
-          <a href="https://nextjs.org/docs" className={styles.card}>
-            <h2>Documentation &rarr;</h2>
-            <p>Find in-depth information about Next.js features and API.</p>
-          </a>
-
-          <a href="https://nextjs.org/learn" className={styles.card}>
-            <h2>Learn &rarr;</h2>
-            <p>Learn about Next.js in an interactive course with quizzes!</p>
-          </a>
-
-          <a
-            href="https://github.com/vercel/next.js/tree/canary/examples"
-            className={styles.card}
-          >
-            <h2>Examples &rarr;</h2>
-            <p>Discover and deploy boilerplate example Next.js projects.</p>
-          </a>
-
-          <a
-            href="https://vercel.com/new?utm_source=create-next-app&utm_medium=default-template&utm_campaign=create-next-app"
-            className={styles.card}
-          >
-            <h2>Deploy &rarr;</h2>
-            <p>
-              Instantly deploy your Next.js site to a public URL with Vercel.
-            </p>
-          </a>
+      <div className={styles.main}>
+        <div>
+          <h1 className={styles.title}>Welcome to Agate NFT Devs!</h1>
+          <div className={styles.description}>
+            Its an NFT collection for developers in Agate.
+          </div>
+          <div className={styles.description}>
+            {tokenIdsMinted}/20 have been minted
+          </div>
+          {renderButton()}
         </div>
-      </main>
+        <div>
+          <img className={styles.image} src="./cryptodevs/0.svg" />
+        </div>
+      </div>
 
       <footer className={styles.footer}>
-        <a
-          href="https://vercel.com?utm_source=create-next-app&utm_medium=default-template&utm_campaign=create-next-app"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          Powered by{' '}
-          <span className={styles.logo}>
-            <Image src="/vercel.svg" alt="Vercel Logo" width={72} height={16} />
-          </span>
-        </a>
+        Made with &#10084; by Agate Research and Development
       </footer>
     </div>
-  )
+  );
+
 }
