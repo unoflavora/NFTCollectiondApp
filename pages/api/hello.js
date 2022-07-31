@@ -3,6 +3,7 @@ export default function handler(req, res) {
   const image_url = `https://raw.githubusercontent.com/unoflavora/nftagaterndimage/main/%20(${tokenId}).png`
   res.status(200).json({
     name: "Agate Dev NFT #" + tokenId,
+    description: "Wey dapet NFT nih. idnya :" + tokenId,
     image: image_url
   });
 }
