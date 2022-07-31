@@ -3,6 +3,7 @@ export default function handler(req, res) {
   const altTokenId = req.query.token_id
   const otherAlt = req.body.token_id
   const otherAlt2 = req.body.tokenId
+  console.log(req)
   console.log(tokenId, altTokenId, otherAlt, otherAlt2)
   const image_url = `https://raw.githubusercontent.com/unoflavora/nftagaterndimage/main/%20(${tokenId}).png`
   res.status(200).json({
